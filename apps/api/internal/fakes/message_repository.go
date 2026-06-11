@@ -1,10 +1,11 @@
 package fakes
 
 import (
+	"context"
 	"sync"
 	"time"
 
-	"github.com/bcastillo-2022474/relay/internal/message"
+	"github.com/bcastillo-2022474/relay/internal/domain/message"
 	"github.com/bcastillo-2022474/relay/internal/shared/types"
 )
 
@@ -22,14 +23,14 @@ func NewInMemoryMessageRepository() *InMemoryMessageRepository {
 	return &InMemoryMessageRepository{rows: make(map[types.MessageID]*messageRow)}
 }
 
-func (r *InMemoryMessageRepository) Save(msg message.Message) error {
+func (r *InMemoryMessageRepository) Save(ctx context.Context, msg message.Message) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.rows[msg.ID] = &messageRow{msg: msg, nextAttemptAt: time.Now()}
 	return nil
 }
 
-func (r *InMemoryMessageRepository) ClaimBatch(limit int) ([]message.Message, error) {
+func (r *InMemoryMessageRepository) ClaimBatch(ctx context.Context, limit int) ([]message.Message, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := time.Now()
@@ -45,7 +46,7 @@ func (r *InMemoryMessageRepository) ClaimBatch(limit int) ([]message.Message, er
 	return claimed, nil
 }
 
-func (r *InMemoryMessageRepository) MarkPublished(id types.MessageID) error {
+func (r *InMemoryMessageRepository) MarkPublished(ctx context.Context, id types.MessageID) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if row, ok := r.rows[id]; ok {
@@ -54,7 +55,7 @@ func (r *InMemoryMessageRepository) MarkPublished(id types.MessageID) error {
 	return nil
 }
 
-func (r *InMemoryMessageRepository) Reschedule(id types.MessageID, nextAttempt time.Time) error {
+func (r *InMemoryMessageRepository) Reschedule(ctx context.Context, id types.MessageID, nextAttempt time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if row, ok := r.rows[id]; ok {
@@ -63,7 +64,7 @@ func (r *InMemoryMessageRepository) Reschedule(id types.MessageID, nextAttempt t
 	return nil
 }
 
-func (r *InMemoryMessageRepository) MarkFailed(id types.MessageID) error {
+func (r *InMemoryMessageRepository) MarkFailed(ctx context.Context, id types.MessageID) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if row, ok := r.rows[id]; ok {

@@ -19,6 +19,11 @@ func (s Slug) String() string {
 	return s.value
 }
 
+// SlugFromTrusted rehydrates a slug that was already validated at write time
+// (the DB enforces is_valid_slug). Never use it for user input — tightening
+// the validation rules must not make existing rows unreadable.
+func SlugFromTrusted(value string) Slug { return Slug{value: value} }
+
 func NewSlug(value string) (Slug, error) {
 	err := validate(value)
 	if err != nil {

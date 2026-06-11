@@ -24,13 +24,15 @@ cmd/
 └── relayer/main.go        (future) the outbox relay loop as its own binary
 
 internal/
-├── application/           ┐
-├── endpoint/              │  DOMAIN packages: types, invariants, and the PORTS
-├── event_type/            │  they consume (e.g. application/repository.go).
-├── message/               │  Interfaces live with their consumer, never in a
-├── organization/          │  central ports/ directory.
-├── shared/types/          │  Cross-feature value types (IDs, Slug, Caller…)
-├── shared/apperr/         ┘  Domain error kinds; the edge maps them to protocols.
+├── domain/                DOMAIN packages, one per feature: types, invariants,
+│   ├── application/       and the PORTS each consumes (e.g. application/repository.go).
+│   ├── endpoint/          Interfaces live with their consumer, never in a central
+│   ├── event_type/        ports/ directory. The domain/ grouping exists to make the
+│   ├── message/           dependency rule lintable in one line: nothing under domain/
+│   ├── organization/      may import anything outside domain/ and shared/.
+│   └── user/
+├── shared/types/          Cross-feature value types (IDs, Slug, Caller…)
+├── shared/apperr/         Domain error kinds; the edge maps them to protocols.
 │
 ├── http/                  DRIVING adapter: handlers, response structs, middleware,
 │                          error→status mapping. One file per feature's endpoints.

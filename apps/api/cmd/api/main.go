@@ -1,62 +1,24 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"time"
 
-	appcommand "github.com/bcastillo-2022474/relay/internal/application/command"
-	endpointcommand "github.com/bcastillo-2022474/relay/internal/endpoint/command"
-	etcommand "github.com/bcastillo-2022474/relay/internal/event_type/command"
-	"github.com/bcastillo-2022474/relay/internal/fakes"
-	"github.com/bcastillo-2022474/relay/internal/httpx"
-	msgcommand "github.com/bcastillo-2022474/relay/internal/message/command"
-	"github.com/bcastillo-2022474/relay/internal/middleware"
-	"github.com/bcastillo-2022474/relay/internal/shared/types"
 	charmlog "github.com/charmbracelet/log"
+	appcommand "github.com/bcastillo-2022474/relay/internal/domain/application/command"
+	endpointcommand "github.com/bcastillo-2022474/relay/internal/domain/endpoint/command"
+	etcommand "github.com/bcastillo-2022474/relay/internal/domain/event_type/command"
+	msgcommand "github.com/bcastillo-2022474/relay/internal/domain/message/command"
+	"github.com/bcastillo-2022474/relay/internal/fakes"
+	relayhttp "github.com/bcastillo-2022474/relay/internal/http"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
-
-type ApplicationResponse struct {
-	Body struct {
-		ID   string `json:"id" doc:"Application ID"`
-		Name string `json:"name"`
-		Slug string `json:"slug"`
-	}
-}
-
-type EventTypeResponse struct {
-	Body struct {
-		ID            string          `json:"id" doc:"Event type ID"`
-		Name          string          `json:"name"`
-		ApplicationID string          `json:"application_id"`
-		PayloadSchema json.RawMessage `json:"payload_schema,omitempty"`
-	}
-}
-
-type EndpointResponse struct {
-	Body struct {
-		ID            string `json:"id" doc:"Endpoint ID"`
-		ApplicationID string `json:"application_id"`
-		URL           string `json:"url"`
-		Description   string `json:"description,omitempty"`
-		SigningSecret string `json:"signing_secret" doc:"Shown once; used to verify webhook signatures"`
-	}
-}
-
-type MessageResponse struct {
-	Body struct {
-		MessageID string `json:"message_id" doc:"Message ID"`
-		Status    string `json:"status" doc:"Message status"`
-	}
-}
 
 func main() {
 	charmLogger := charmlog.NewWithOptions(os.Stdout, charmlog.Options{
@@ -69,163 +31,29 @@ func main() {
 
 	authz := fakes.AllowAllAuthorization{}
 
-	// In-memory repositories until Postgres lands.
-	appRepo := fakes.NewInMemoryApplicationRepo()
+	appRepo      := fakes.NewInMemoryApplicationRepo()
 	eventTypeRepo := fakes.NewInMemoryEventTypeRepo()
-	endpointRepo := fakes.NewInMemoryEndpointRepo()
-	msgRepo := fakes.NewInMemoryMessageRepository()
+	endpointRepo  := fakes.NewInMemoryEndpointRepo()
+	msgRepo       := fakes.NewInMemoryMessageRepository()
 
-	createApp := appcommand.NewCreateCommand(appRepo, authz, appLog)
+	createApp      := appcommand.NewCreateCommand(appRepo, authz, appLog)
 	createEventType := etcommand.NewCreateTypeCommand(eventTypeRepo, appRepo, authz, appLog)
-	createEndpoint := endpointcommand.NewCreateCommand(endpointRepo, appRepo, authz, appLog)
-	publishMsg := msgcommand.NewPublishCommand(eventTypeRepo, appRepo, msgRepo, authz, appLog)
+	createEndpoint  := endpointcommand.NewCreateCommand(endpointRepo, appRepo, authz, appLog)
+	publishMsg      := msgcommand.NewPublishCommand(eventTypeRepo, appRepo, msgRepo, authz, appLog)
 
 	router := chi.NewMux()
-	router.Use(middleware.Auth)
+	router.Use(relayhttp.AuthMiddleware)
 	router.Use(chimiddleware.RequestLogger(&chimiddleware.DefaultLogFormatter{
-		Logger:  newChiLogger(httpLog),
+		Logger:  &chiSlogLogger{log: httpLog},
 		NoColor: false,
 	}))
 
 	api := humachi.New(router, huma.DefaultConfig("Relay API", "0.1.0"))
 
-	// POST /v1/app
-	huma.Register(api, huma.Operation{
-		OperationID:   "create-application",
-		Method:        http.MethodPost,
-		Path:          "/v1/app",
-		Summary:       "Create an application",
-		Tags:          []string{"Applications"},
-		DefaultStatus: http.StatusCreated,
-	}, httpx.Wrap(func(ctx context.Context, input *struct {
-		Body struct {
-			Name string `json:"name" minLength:"1" doc:"Application name"`
-			Slug string `json:"slug" minLength:"1" doc:"URL-safe identifier"`
-		}
-	}) (*ApplicationResponse, error) {
-		app, err := createApp.Execute(appcommand.CreateInput{
-			OrganizationID: middleware.OrgIDFromCtx(ctx),
-			Caller:         middleware.CallerFromCtx(ctx),
-			Name:           input.Body.Name,
-			Slug:           input.Body.Slug,
-		})
-		if err != nil {
-			return nil, err
-		}
-		resp := &ApplicationResponse{}
-		resp.Body.ID = string(app.ID)
-		resp.Body.Name = app.Name
-		resp.Body.Slug = app.Slug.String()
-		return resp, nil
-	}))
-
-	// POST /v1/app/{appId}/event-type
-	huma.Register(api, huma.Operation{
-		OperationID:   "create-event-type",
-		Method:        http.MethodPost,
-		Path:          "/v1/app/{appId}/event-type",
-		Summary:       "Create an event type",
-		Tags:          []string{"Event Types"},
-		DefaultStatus: http.StatusCreated,
-	}, httpx.Wrap(func(ctx context.Context, input *struct {
-		AppID string `path:"appId"`
-		Body  struct {
-			Name          string          `json:"name" minLength:"1"`
-			PayloadSchema json.RawMessage `json:"payload_schema,omitempty"`
-		}
-	}) (*EventTypeResponse, error) {
-		var schema *types.PayloadSchema
-		if len(input.Body.PayloadSchema) > 0 {
-			ps, err := types.NewPayloadSchema(input.Body.PayloadSchema)
-			if err != nil {
-				return nil, huma.Error422UnprocessableEntity("invalid payload schema", err)
-			}
-			schema = &ps
-		}
-		et, err := createEventType.Execute(etcommand.CreateTypeInput{
-			Name:           input.Body.Name,
-			ApplicationID:  types.ApplicationID(input.AppID),
-			OrganizationID: middleware.OrgIDFromCtx(ctx),
-			PayloadSchema:  schema,
-			Caller:         middleware.CallerFromCtx(ctx),
-		})
-		if err != nil {
-			return nil, err
-		}
-		resp := &EventTypeResponse{}
-		resp.Body.ID = string(et.ID)
-		resp.Body.Name = et.Name
-		resp.Body.ApplicationID = string(et.ApplicationID)
-		if et.HasPayloadSchema() {
-			resp.Body.PayloadSchema = et.PayloadSchema.JSON()
-		}
-		return resp, nil
-	}))
-
-	// POST /v1/app/{appId}/endpoint
-	huma.Register(api, huma.Operation{
-		OperationID:   "create-endpoint",
-		Method:        http.MethodPost,
-		Path:          "/v1/app/{appId}/endpoint",
-		Summary:       "Create an endpoint",
-		Tags:          []string{"Endpoints"},
-		DefaultStatus: http.StatusCreated,
-	}, httpx.Wrap(func(ctx context.Context, input *struct {
-		AppID string `path:"appId"`
-		Body  struct {
-			URL         string `json:"url" minLength:"1"`
-			Description string `json:"description,omitempty"`
-		}
-	}) (*EndpointResponse, error) {
-		ep, err := createEndpoint.Execute(endpointcommand.CreateInput{
-			ApplicationID:  types.ApplicationID(input.AppID),
-			OrganizationID: middleware.OrgIDFromCtx(ctx),
-			URL:            input.Body.URL,
-			Description:    input.Body.Description,
-			Caller:         middleware.CallerFromCtx(ctx),
-		})
-		if err != nil {
-			return nil, err
-		}
-		resp := &EndpointResponse{}
-		resp.Body.ID = string(ep.ID)
-		resp.Body.ApplicationID = string(ep.ApplicationID)
-		resp.Body.URL = ep.URL
-		resp.Body.Description = ep.Description
-		resp.Body.SigningSecret = ep.SigningSecret
-		return resp, nil
-	}))
-
-	// POST /v1/app/{appId}/msg
-	huma.Register(api, huma.Operation{
-		OperationID:   "publish-message",
-		Method:        http.MethodPost,
-		Path:          "/v1/app/{appId}/msg",
-		Summary:       "Publish a message",
-		Tags:          []string{"Messages"},
-		DefaultStatus: http.StatusAccepted,
-	}, httpx.Wrap(func(ctx context.Context, input *struct {
-		AppID string `path:"appId"`
-		Body  struct {
-			EventType string          `json:"event_type" minLength:"1"`
-			Payload   json.RawMessage `json:"payload"`
-		}
-	}) (*MessageResponse, error) {
-		msg, err := publishMsg.Execute(msgcommand.PublishCommandInput{
-			Payload:        input.Body.Payload,
-			EventType:      input.Body.EventType,
-			ApplicationID:  types.ApplicationID(input.AppID),
-			OrganizationID: middleware.OrgIDFromCtx(ctx),
-			Caller:         middleware.CallerFromCtx(ctx),
-		})
-		if err != nil {
-			return nil, err
-		}
-		resp := &MessageResponse{}
-		resp.Body.MessageID = string(msg.ID)
-		resp.Body.Status = string(msg.Status)
-		return resp, nil
-	}))
+	relayhttp.RegisterApplicationRoutes(api, createApp)
+	relayhttp.RegisterEventTypeRoutes(api, createEventType)
+	relayhttp.RegisterEndpointRoutes(api, createEndpoint)
+	relayhttp.RegisterMessageRoutes(api, publishMsg)
 
 	httpLog.Info("api listening", "addr", ":8080")
 	if err := http.ListenAndServe(":8080", router); err != nil {
@@ -234,17 +62,7 @@ func main() {
 	}
 }
 
-// newChiLogger bridges chi's request logger to our slog instance.
-func newChiLogger(log *slog.Logger) chimiddleware.LoggerInterface {
-	return &chiSlogLogger{log: log}
-}
-
 type chiSlogLogger struct{ log *slog.Logger }
 
-func (l *chiSlogLogger) Print(v ...any) {
-	l.log.Info(fmt.Sprint(v...))
-}
-
-func (l *chiSlogLogger) Printf(format string, v ...any) {
-	l.log.Info(fmt.Sprintf(format, v...))
-}
+func (l *chiSlogLogger) Print(v ...any)                 { l.log.Info(fmt.Sprint(v...)) }
+func (l *chiSlogLogger) Printf(format string, v ...any) { l.log.Info(fmt.Sprintf(format, v...)) }
