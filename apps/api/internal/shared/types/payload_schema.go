@@ -8,7 +8,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-// PayloadSchema is a JSON Schema document that event payloads are validated
+// PayloadSchema is a JSON Schema document that event_type payloads are validated
 // against at ingest time. Construct via NewPayloadSchema so an invalid
 // schema can never exist.
 type PayloadSchema struct {

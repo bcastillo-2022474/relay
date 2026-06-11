@@ -5,30 +5,25 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/bcastillo-2022474/relay/internal/application"
-	"github.com/bcastillo-2022474/relay/internal/organization"
+	"github.com/bcastillo-2022474/relay/internal/shared/types"
 	"github.com/google/uuid"
 )
 
-type ID string
-
 const signingSecretLength = 32
 
-// Endpoint is a webhook receiver URL registered to receive events
-// matching its subscriptions.
 type Endpoint struct {
-	ID              ID
-	ApplicationID   application.ID
-	OrganizationID  organization.ID
-	URL             string
-	Description     string
-	SigningSecret   string
-	Disabled        bool
+	ID             types.EndpointID
+	ApplicationID  types.ApplicationID
+	OrganizationID types.OrganizationID
+	URL            string
+	Description    string
+	SigningSecret  string
+	Disabled       bool
 }
 
 func New(
-	appID application.ID,
-	orgID organization.ID,
+	appID types.ApplicationID,
+	orgID types.OrganizationID,
 	url string,
 	description string,
 ) (Endpoint, error) {
@@ -42,7 +37,7 @@ func New(
 	}
 
 	return Endpoint{
-		ID:             ID(uuid.NewString()),
+		ID:             types.EndpointID(uuid.NewString()),
 		ApplicationID:  appID,
 		OrganizationID: orgID,
 		URL:            url,
@@ -60,10 +55,5 @@ func generateSigningSecret() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-func (e *Endpoint) Disable() {
-	e.Disabled = true
-}
-
-func (e *Endpoint) Enable() {
-	e.Disabled = false
-}
+func (e *Endpoint) Disable() { e.Disabled = true }
+func (e *Endpoint) Enable()  { e.Disabled = false }

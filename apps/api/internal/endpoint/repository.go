@@ -1,19 +1,16 @@
 package endpoint
 
-import (
-	"github.com/bcastillo-2022474/relay/internal/organization"
-	"github.com/bcastillo-2022474/relay/internal/shared/types"
-)
+import "github.com/bcastillo-2022474/relay/internal/shared/types"
 
 type Repository interface {
 	Save(endpoint Endpoint) error
-	FindByID(id ID, orgID organization.ID) (types.Result[Endpoint], error)
-	FindByURL(url string, orgID organization.ID) (types.Result[Endpoint], error)
+	FindByID(id types.EndpointID, orgID types.OrganizationID) (types.Result[Endpoint], error)
+	FindByURL(url string, orgID types.OrganizationID) (types.Result[Endpoint], error)
 	Delete(endpoint Endpoint) error
 }
 
 type SubscriptionRepository interface {
-	Subscribe(endpointID ID, eventTypeID string, orgID organization.ID) error
-	Unsubscribe(endpointID ID, eventTypeID string, orgID organization.ID) error
-	FindSubscribedEventTypes(endpointID ID, orgID organization.ID) ([]string, error)
+	Subscribe(endpointID types.EndpointID, eventTypeID types.EventTypeID, orgID types.OrganizationID) error
+	Unsubscribe(endpointID types.EndpointID, eventTypeID types.EventTypeID, orgID types.OrganizationID) error
+	FindSubscribedEventTypes(endpointID types.EndpointID, orgID types.OrganizationID) ([]types.EventTypeID, error)
 }

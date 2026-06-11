@@ -1,11 +1,9 @@
 package user
 
-import "github.com/bcastillo-2022474/relay/internal/organization"
-
-type ID string
+import "github.com/bcastillo-2022474/relay/internal/shared/types"
 
 type User struct {
-	ID             ID
+	ID             types.UserID
 	Name           string
-	OrganizationID organization.ID
+	OrganizationID types.OrganizationID
 }
