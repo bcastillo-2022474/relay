@@ -15,7 +15,7 @@ import (
 type PublishCommand struct {
 	eventTypeRepository   event_type.TypeRepository
 	applicationRepository application.Repository
-	broker                message.Broker
+	messageRepository     message.Repository
 	authz                 types.Authorization
 	log                   *slog.Logger
 }
@@ -31,66 +31,61 @@ type PublishCommandInput struct {
 func NewPublishCommand(
 	eventTypeRepository event_type.TypeRepository,
 	applicationRepository application.Repository,
-	broker message.Broker,
+	messageRepository message.Repository,
 	authz types.Authorization,
 	log *slog.Logger,
 ) *PublishCommand {
 	return &PublishCommand{
 		eventTypeRepository:   eventTypeRepository,
 		applicationRepository: applicationRepository,
-		broker:                broker,
+		messageRepository:     messageRepository,
 		authz:                 authz,
 		log:                   log,
 	}
 }
 
-func (c *PublishCommand) Execute(input PublishCommandInput) error {
+func (c *PublishCommand) Execute(input PublishCommandInput) (message.Message, error) {
 	c.log.Info("publishing message",
 		"event_type", input.EventType,
 		"app_id", input.ApplicationID,
 		"org_id", input.OrganizationID)
 
-	err := c.authz.CanPublishMessage(input.Caller, input.OrganizationID)
-	if err != nil {
-		return fmt.Errorf("checking authorization: %w", err)
+	if err := c.authz.CanPublishMessage(input.Caller, input.OrganizationID); err != nil {
+		return message.Message{}, fmt.Errorf("checking authorization: %w", err)
 	}
 
 	app, err := c.applicationRepository.FindByID(input.ApplicationID, input.OrganizationID)
 	if err != nil {
-		return fmt.Errorf("finding application: %w", err)
+		return message.Message{}, fmt.Errorf("finding application: %w", err)
 	}
-
 	if !app.Ok {
-		return apperr.NotFound("application %q not found", input.ApplicationID)
+		return message.Message{}, apperr.NotFound("application %q not found", input.ApplicationID)
 	}
 
 	eventType, err := c.eventTypeRepository.FindByName(input.EventType, input.ApplicationID, input.OrganizationID)
 	if err != nil {
-		return fmt.Errorf("finding event_type: %w", err)
+		return message.Message{}, fmt.Errorf("finding event type: %w", err)
 	}
-
 	if !eventType.Ok {
-		return apperr.NotFound("event_type %q not found", input.EventType)
+		return message.Message{}, apperr.NotFound("event type %q not found", input.EventType)
 	}
 
-	// PayloadSchema is optional; event types without one accept any payload.
 	if eventType.Found.HasPayloadSchema() {
 		if err := eventType.Found.PayloadSchema.Validate(input.Payload); err != nil {
-			return apperr.Invalid(err, "payload does not conform to event type %q schema", input.EventType)
+			return message.Message{}, apperr.Invalid(err, "payload does not conform to event type %q schema", input.EventType)
 		}
 	}
 
-	msg := message.NewMessage(eventType.Found.ID, input.Payload)
+	msg := message.New(input.OrganizationID, input.ApplicationID, eventType.Found.ID, input.Payload)
 
-	err = c.broker.Publish(msg)
-	if err != nil {
-		return fmt.Errorf("publishing message: %w", err)
+	if err := c.messageRepository.Save(msg); err != nil {
+		return message.Message{}, fmt.Errorf("saving message: %w", err)
 	}
 
-	c.log.Info("message published successfully",
-		"event_type", input.EventType,
+	c.log.Info("message accepted",
+		"message_id", msg.ID,
 		"event_type_id", eventType.Found.ID,
 		"app_id", input.ApplicationID)
 
-	return nil
+	return msg, nil
 }

@@ -47,21 +47,27 @@ type EndpointResponse struct {
 	}
 }
 
+type MessageResponse struct {
+	Body struct {
+		MessageID string `json:"message_id" doc:"Message ID"`
+		Status    string `json:"status" doc:"Message status"`
+	}
+}
+
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	authz := fakes.AllowAllAuthorization{}
-	broker := fakes.NewLogBroker(log)
 
-	// In-memory repositories until Postgres lands. These are the fakes the
-	// repository contract suites will later run against.
+	// In-memory repositories until Postgres lands.
 	appRepo := fakes.NewInMemoryApplicationRepo()
 	eventTypeRepo := fakes.NewInMemoryEventTypeRepo()
 	endpointRepo := fakes.NewInMemoryEndpointRepo()
+	msgRepo := fakes.NewInMemoryMessageRepository()
 
 	createApp := appcommand.NewCreateCommand(appRepo, authz, log)
 	createEventType := etcommand.NewCreateTypeCommand(eventTypeRepo, appRepo, authz, log)
 	createEndpoint := endpointcommand.NewCreateCommand(endpointRepo, appRepo, authz, log)
-	publishMsg := msgcommand.NewPublishCommand(eventTypeRepo, appRepo, broker, authz, log)
+	publishMsg := msgcommand.NewPublishCommand(eventTypeRepo, appRepo, msgRepo, authz, log)
 
 	router := chi.NewMux()
 	router.Use(middleware.Auth)
@@ -189,14 +195,23 @@ func main() {
 			EventType string          `json:"event_type" minLength:"1"`
 			Payload   json.RawMessage `json:"payload"`
 		}
-	}) (*struct{}, error) {
-		return nil, publishMsg.Execute(msgcommand.PublishCommandInput{
+	}) (*MessageResponse, error) {
+		message, err := publishMsg.Execute(msgcommand.PublishCommandInput{
 			Payload:        input.Body.Payload,
 			EventType:      input.Body.EventType,
 			ApplicationID:  types.ApplicationID(input.AppID),
 			OrganizationID: middleware.OrgIDFromCtx(ctx),
 			Caller:         middleware.CallerFromCtx(ctx),
 		})
+
+		if err != nil {
+			return nil, err
+		}
+		resp := &MessageResponse{}
+		resp.Body.MessageID = string(message.ID)
+		resp.Body.Status = string(message.Status)
+
+		return resp, nil
 	}))
 
 	log.Info("api listening", "addr", ":8080")

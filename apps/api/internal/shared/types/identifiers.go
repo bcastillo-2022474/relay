@@ -5,3 +5,4 @@ type ApplicationID string
 type EndpointID string
 type EventTypeID string
 type UserID string
+type MessageID string
