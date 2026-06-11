@@ -29,7 +29,7 @@ func NewSlug(value string) (Slug, error) {
 	if err != nil {
 		return Slug{}, err
 	}
-	
+
 	return Slug{value: value}, nil
 }
 

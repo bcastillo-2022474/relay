@@ -47,6 +47,7 @@ func RegisterEventTypeRoutes(api huma.API, createEventType *etcommand.CreateType
 		if err != nil {
 			return nil, apperr.Invalid(err, "invalid application id %q", input.AppID)
 		}
+
 		et, err := createEventType.Execute(ctx, etcommand.CreateTypeInput{
 			Name:           input.Body.Name,
 			ApplicationID:  appID,
