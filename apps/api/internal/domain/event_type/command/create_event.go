@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -36,7 +37,7 @@ type CreateTypeInput struct {
 	Name           string
 	ApplicationID  types.ApplicationID
 	OrganizationID types.OrganizationID
-	PayloadSchema  *types.PayloadSchema
+	PayloadSchema  json.RawMessage // optional; validated and compiled here, not at the edge
 	Caller         types.Caller
 }
 
@@ -68,11 +69,20 @@ func (c *CreateTypeCommand) Execute(ctx context.Context, input CreateTypeInput) 
 			input.Name, input.ApplicationID)
 	}
 
+	var schema *types.PayloadSchema
+	if len(input.PayloadSchema) > 0 {
+		ps, err := types.NewPayloadSchema(input.PayloadSchema)
+		if err != nil {
+			return event_type2.EventType{}, apperr.Invalid(err, "invalid payload schema")
+		}
+		schema = &ps
+	}
+
 	eventType, err := event_type2.NewEventType(
 		input.Name,
 		input.ApplicationID,
 		input.OrganizationID,
-		input.PayloadSchema,
+		schema,
 	)
 	if err != nil {
 		return event_type2.EventType{}, apperr.Invalid(err, "invalid event type")

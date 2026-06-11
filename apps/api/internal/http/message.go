@@ -5,17 +5,34 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/bcastillo-2022474/relay/internal/domain/message"
 	msgcommand "github.com/bcastillo-2022474/relay/internal/domain/message/command"
-	"github.com/bcastillo-2022474/relay/internal/shared/apperr"
 	"github.com/bcastillo-2022474/relay/internal/shared/types"
 	"github.com/danielgtaylor/huma/v2"
 )
 
-type messageResponse struct {
-	Body struct {
-		MessageID string `json:"message_id"`
-		Status    string `json:"status"`
+type publishMessageRequest struct {
+	AppID types.ApplicationID `path:"appId" doc:"Application ID"`
+	Body  struct {
+		EventType string          `json:"event_type" minLength:"1"`
+		Payload   json.RawMessage `json:"payload"`
 	}
+}
+
+type messageResponse struct {
+	Body messageBody
+}
+
+type messageBody struct {
+	MessageID types.MessageID `json:"message_id"`
+	Status    message.Status  `json:"status"`
+}
+
+func newMessageResponse(msg message.Message) *messageResponse {
+	return &messageResponse{Body: messageBody{
+		MessageID: msg.ID,
+		Status:    msg.Status,
+	}}
 }
 
 func RegisterMessageRoutes(api huma.API, publishMsg *msgcommand.PublishCommand) {
@@ -25,31 +42,18 @@ func RegisterMessageRoutes(api huma.API, publishMsg *msgcommand.PublishCommand) 
 		Path:          "/v1/app/{appId}/msg",
 		Summary:       "Publish a message",
 		Tags:          []string{"Messages"},
-		DefaultStatus: http.StatusAccepted,
-	}, wrap(func(ctx context.Context, input *struct {
-		AppID string `path:"appId"`
-		Body  struct {
-			EventType string          `json:"event_type" minLength:"1"`
-			Payload   json.RawMessage `json:"payload"`
-		}
-	}) (*messageResponse, error) {
-		appID, err := types.ParseApplicationID(input.AppID)
-		if err != nil {
-			return nil, apperr.Invalid(err, "invalid application id %q", input.AppID)
-		}
+		DefaultStatus: http.StatusAccepted, // durable acceptance, not delivery
+	}, wrap(func(ctx context.Context, req *publishMessageRequest) (*messageResponse, error) {
 		msg, err := publishMsg.Execute(ctx, msgcommand.PublishCommandInput{
-			Payload:        input.Body.Payload,
-			EventType:      input.Body.EventType,
-			ApplicationID:  appID,
+			Payload:        req.Body.Payload,
+			EventType:      req.Body.EventType,
+			ApplicationID:  req.AppID,
 			OrganizationID: OrgIDFromCtx(ctx),
 			Caller:         CallerFromCtx(ctx),
 		})
 		if err != nil {
 			return nil, err
 		}
-		resp := &messageResponse{}
-		resp.Body.MessageID = msg.ID.String()
-		resp.Body.Status = string(msg.Status)
-		return resp, nil
+		return newMessageResponse(msg), nil
 	}))
 }

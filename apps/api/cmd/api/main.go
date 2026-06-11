@@ -17,8 +17,6 @@ import (
 	relayhttp "github.com/bcastillo-2022474/relay/internal/http"
 	"github.com/bcastillo-2022474/relay/internal/postgres"
 	charmlog "github.com/charmbracelet/log"
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -70,7 +68,7 @@ func main() {
 		NoColor: false,
 	}))
 
-	api := humachi.New(router, huma.DefaultConfig("Relay API", "0.1.0"))
+	api := relayhttp.NewAPI(router, "Relay API", "0.1.0")
 
 	relayhttp.RegisterApplicationRoutes(api, createApp)
 	relayhttp.RegisterEventTypeRoutes(api, createEventType)

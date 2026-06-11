@@ -4,7 +4,8 @@ import "github.com/google/uuid"
 
 // IDs are uuid-backed: converting to and from the database is an infallible
 // cast (uuid.UUID(id)), never a parse. Strings exist only at the transport
-// edge — Parse* on the way in, String() on the way out.
+// edge, where the Text marshaller interfaces let huma and encoding/json do
+// the conversion — handlers never parse or stringify IDs themselves.
 
 type OrganizationID uuid.UUID
 type ApplicationID uuid.UUID
@@ -49,3 +50,19 @@ func ParseMessageID(s string) (MessageID, error) {
 	u, err := uuid.Parse(s)
 	return MessageID(u), err
 }
+
+// Text marshalling: lets huma parse path params and encoding/json read/write
+// these as uuid strings, with a 422 produced automatically on garbage input.
+
+func (id OrganizationID) MarshalText() ([]byte, error)  { return uuid.UUID(id).MarshalText() }
+func (id *OrganizationID) UnmarshalText(b []byte) error { return (*uuid.UUID)(id).UnmarshalText(b) }
+func (id ApplicationID) MarshalText() ([]byte, error)   { return uuid.UUID(id).MarshalText() }
+func (id *ApplicationID) UnmarshalText(b []byte) error  { return (*uuid.UUID)(id).UnmarshalText(b) }
+func (id EndpointID) MarshalText() ([]byte, error)      { return uuid.UUID(id).MarshalText() }
+func (id *EndpointID) UnmarshalText(b []byte) error     { return (*uuid.UUID)(id).UnmarshalText(b) }
+func (id EventTypeID) MarshalText() ([]byte, error)     { return uuid.UUID(id).MarshalText() }
+func (id *EventTypeID) UnmarshalText(b []byte) error    { return (*uuid.UUID)(id).UnmarshalText(b) }
+func (id UserID) MarshalText() ([]byte, error)          { return uuid.UUID(id).MarshalText() }
+func (id *UserID) UnmarshalText(b []byte) error         { return (*uuid.UUID)(id).UnmarshalText(b) }
+func (id MessageID) MarshalText() ([]byte, error)       { return uuid.UUID(id).MarshalText() }
+func (id *MessageID) UnmarshalText(b []byte) error      { return (*uuid.UUID)(id).UnmarshalText(b) }

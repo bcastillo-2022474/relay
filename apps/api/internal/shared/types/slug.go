@@ -19,6 +19,13 @@ func (s Slug) String() string {
 	return s.value
 }
 
+// MarshalText lets encoding/json write a Slug as its plain string value.
+// There is deliberately no UnmarshalText: slugs enter the system through
+// NewSlug so validation cannot be bypassed by deserialization.
+func (s Slug) MarshalText() ([]byte, error) {
+	return []byte(s.value), nil
+}
+
 // SlugFromTrusted rehydrates a slug that was already validated at write time
 // (the DB enforces is_valid_slug). Never use it for user input — tightening
 // the validation rules must not make existing rows unreadable.
