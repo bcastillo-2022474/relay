@@ -1,0 +1,151 @@
+name: relay
+
+services:
+  # ── Write side ────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: relay
+      POSTGRES_PASSWORD: relay
+      POSTGRES_DB: relay
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # creates the kratos / hydra / spicedb databases on first boot
+      # :z relabels for SELinux (Fedora enforcing) so the container can read it
+      - ./docker/postgres:/docker-entrypoint-initdb.d:ro,z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relay"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  # ── Read side ─────────────────────────────────────────────────
+  mongo:
+    image: mongo:8
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ping: 1})'"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  # ── Cache / circuit breakers / dedup ──────────────────────────
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  # ── Broker ────────────────────────────────────────────────────
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "4222:4222" # client
+      - "8222:8222" # monitoring
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  # ── Identity: Ory Kratos ──────────────────────────────────────
+  kratos-migrate:
+    image: oryd/kratos:v1.3.1
+    command: migrate sql -e --yes
+    environment:
+      DSN: postgres://relay:relay@postgres:5432/kratos?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  kratos:
+    image: oryd/kratos:v1.3.1
+    command: serve -c /etc/config/kratos/kratos.yml --dev --watch-courier
+    environment:
+      DSN: postgres://relay:relay@postgres:5432/kratos?sslmode=disable
+    ports:
+      - "4433:4433" # public
+      - "4434:4434" # admin
+    volumes:
+      - ./docker/kratos:/etc/config/kratos:ro,z
+    depends_on:
+      kratos-migrate:
+        condition: service_completed_successfully
+
+  # ── OAuth2/OIDC: Ory Hydra ────────────────────────────────────
+  hydra-migrate:
+    image: oryd/hydra:v2.3.0
+    command: migrate sql -e --yes
+    environment:
+      DSN: postgres://relay:relay@postgres:5432/hydra?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  hydra:
+    image: oryd/hydra:v2.3.0
+    command: serve all --dev
+    environment:
+      DSN: postgres://relay:relay@postgres:5432/hydra?sslmode=disable
+      URLS_SELF_ISSUER: http://localhost:4444
+      # login/consent UI lives in apps/web (adjust port if it differs)
+      URLS_LOGIN: http://localhost:3000/login
+      URLS_CONSENT: http://localhost:3000/consent
+      URLS_LOGOUT: http://localhost:3000/logout
+      SECRETS_SYSTEM: dev-insecure-hydra-system-secret
+      OAUTH2_EXPOSE_INTERNAL_ERRORS: "true"
+      SERVE_COOKIES_SAME_SITE_MODE: Lax
+    ports:
+      - "4444:4444" # public
+      - "4445:4445" # admin
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+
+  # ── Authorization: SpiceDB ────────────────────────────────────
+  spicedb-migrate:
+    image: authzed/spicedb:v1.40.1
+    command: datastore migrate head
+    environment:
+      SPICEDB_DATASTORE_ENGINE: postgres
+      SPICEDB_DATASTORE_CONN_URI: postgres://relay:relay@postgres:5432/spicedb?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  spicedb:
+    image: authzed/spicedb:v1.40.1
+    command: serve
+    environment:
+      SPICEDB_GRPC_PRESHARED_KEY: dev-insecure-spicedb-key
+      SPICEDB_DATASTORE_ENGINE: postgres
+      SPICEDB_DATASTORE_CONN_URI: postgres://relay:relay@postgres:5432/spicedb?sslmode=disable
+    ports:
+      - "50051:50051" # gRPC
+    depends_on:
+      spicedb-migrate:
+        condition: service_completed_successfully
+
+  # ── Dev mail catcher (Kratos recovery/verification emails) ────
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports:
+      - "8025:8025" # web UI
+      - "1025:1025" # SMTP
+
+volumes:
+  postgres_data:
+  mongo_data:
+  nats_data:

@@ -1,0 +1,25 @@
+# Binaries
+tmp/
+*.exe
+*.out
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+
+# Node
+node_modules/

@@ -1,0 +1,45 @@
+# run `just` with no args to see this list
+default:
+    @just --list
+
+# start all dev infrastructure (postgres, mongo, redis, nats, ory, spicedb)
+infra:
+    docker compose up -d
+
+# stop dev infrastructure (data volumes survive)
+infra-down:
+    docker compose down
+
+# stop dev infrastructure and wipe all data
+infra-nuke:
+    docker compose down -v
+
+# apply all pending migrations
+migrate:
+    tern migrate --migrations migrations --config migrations/tern.conf
+
+# roll back one migration
+migrate-down:
+    tern migrate --migrations migrations --config migrations/tern.conf --destination -1
+
+# show which migrations have been applied
+migrate-status:
+    tern status --migrations migrations --config migrations/tern.conf
+
+# create a new numbered migration file
+new-migration name:
+    tern new --migrations migrations {{name}}
+
+# regenerate type-safe query code from queries/*.sql
+sqlc:
+    sqlc generate
+
+# run the api with live reload
+dev:
+    air
+
+build:
+    go build ./...
+
+test:
+    go test ./...

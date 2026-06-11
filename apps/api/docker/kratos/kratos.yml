@@ -1,0 +1,78 @@
+# Dev config. DSN comes from the DSN env var in docker-compose.yml.
+# UI URLs point at the dashboard (apps/web), assumed on localhost:3000.
+
+serve:
+  public:
+    base_url: http://localhost:4433/
+    cors:
+      enabled: true
+      allowed_origins:
+        - http://localhost:3000
+  admin:
+    base_url: http://kratos:4434/
+
+selfservice:
+  default_browser_return_url: http://localhost:3000/
+  allowed_return_urls:
+    - http://localhost:3000
+
+  methods:
+    password:
+      enabled: true
+
+  flows:
+    error:
+      ui_url: http://localhost:3000/error
+
+    login:
+      ui_url: http://localhost:3000/login
+
+    registration:
+      ui_url: http://localhost:3000/registration
+      after:
+        password:
+          hooks:
+            - hook: session
+
+    settings:
+      ui_url: http://localhost:3000/settings
+
+    recovery:
+      enabled: true
+      ui_url: http://localhost:3000/recovery
+
+    verification:
+      enabled: true
+      ui_url: http://localhost:3000/verification
+      after:
+        default_browser_return_url: http://localhost:3000/
+
+    logout:
+      after:
+        default_browser_return_url: http://localhost:3000/login
+
+identity:
+  default_schema_id: default
+  schemas:
+    - id: default
+      url: file:///etc/config/kratos/identity.schema.json
+
+courier:
+  smtp:
+    # mailpit catches everything; open http://localhost:8025 to read mail
+    connection_uri: smtp://mailpit:1025/?disable_starttls=true
+
+secrets:
+  cookie:
+    - dev-insecure-kratos-cookie-secret
+  cipher:
+    - dev-insecure-32-char-cipher-secr
+
+hashers:
+  algorithm: bcrypt
+  bcrypt:
+    cost: 8 # low cost for fast dev logins; never use in prod
+
+log:
+  level: debug
+  format: text
