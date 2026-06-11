@@ -10,15 +10,14 @@ import (
 	"github.com/bcastillo-2022474/relay/internal/shared/types"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type EventTypeRepo struct {
 	q *db.Queries
 }
 
-func NewEventTypeRepo(pool *pgxpool.Pool) *EventTypeRepo {
-	return &EventTypeRepo{q: db.New(pool)}
+func NewEventTypeRepo(conn db.DBTX) *EventTypeRepo {
+	return &EventTypeRepo{q: db.New(conn)}
 }
 
 func (r *EventTypeRepo) Save(ctx context.Context, et event_type.EventType) error {

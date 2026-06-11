@@ -10,6 +10,23 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
+type endpointHandlers struct {
+	createEndpoint *endpointcommand.CreateCommand
+}
+
+func RegisterEndpointRoutes(api huma.API, createEndpoint *endpointcommand.CreateCommand) {
+	h := endpointHandlers{createEndpoint: createEndpoint}
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "create-endpoint",
+		Method:        http.MethodPost,
+		Path:          "/v1/app/{appId}/endpoint",
+		Summary:       "Create an endpoint",
+		Tags:          []string{"Endpoints"},
+		DefaultStatus: http.StatusCreated,
+	}, wrap(h.create))
+}
+
 type createEndpointRequest struct {
 	AppID types.ApplicationID `path:"appId" doc:"Application ID"`
 	Body  struct {
@@ -40,25 +57,17 @@ func newEndpointResponse(ep endpoint.Endpoint) *endpointResponse {
 	}}
 }
 
-func RegisterEndpointRoutes(api huma.API, createEndpoint *endpointcommand.CreateCommand) {
-	huma.Register(api, huma.Operation{
-		OperationID:   "create-endpoint",
-		Method:        http.MethodPost,
-		Path:          "/v1/app/{appId}/endpoint",
-		Summary:       "Create an endpoint",
-		Tags:          []string{"Endpoints"},
-		DefaultStatus: http.StatusCreated,
-	}, wrap(func(ctx context.Context, req *createEndpointRequest) (*endpointResponse, error) {
-		ep, err := createEndpoint.Execute(ctx, endpointcommand.CreateInput{
-			ApplicationID:  req.AppID,
-			OrganizationID: OrgIDFromCtx(ctx),
-			URL:            req.Body.URL,
-			Description:    req.Body.Description,
-			Caller:         CallerFromCtx(ctx),
-		})
-		if err != nil {
-			return nil, err
-		}
-		return newEndpointResponse(ep), nil
-	}))
+func (h endpointHandlers) create(ctx context.Context, req *createEndpointRequest) (*endpointResponse, error) {
+	ep, err := h.createEndpoint.Execute(ctx, endpointcommand.CreateInput{
+		ApplicationID:  req.AppID,
+		OrganizationID: OrgIDFromCtx(ctx),
+		URL:            req.Body.URL,
+		Description:    req.Body.Description,
+		Caller:         CallerFromCtx(ctx),
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return newEndpointResponse(ep), nil
 }

@@ -9,15 +9,14 @@ import (
 	"github.com/bcastillo-2022474/relay/internal/shared/types"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type ApplicationRepo struct {
 	q *db.Queries
 }
 
-func NewApplicationRepo(pool *pgxpool.Pool) *ApplicationRepo {
-	return &ApplicationRepo{q: db.New(pool)}
+func NewApplicationRepo(conn db.DBTX) *ApplicationRepo {
+	return &ApplicationRepo{q: db.New(conn)}
 }
 
 func (r *ApplicationRepo) Save(ctx context.Context, app application.Application) error {

@@ -22,7 +22,7 @@ WHERE id IN (
     LIMIT $1
     FOR UPDATE SKIP LOCKED
 )
-RETURNING id, organization_id, application_id, event_type_id, payload, status
+RETURNING id, organization_id, application_id, event_type_id, payload, status, attempts
 `
 
 type ClaimMessageBatchRow struct {
@@ -32,6 +32,7 @@ type ClaimMessageBatchRow struct {
 	EventTypeID    uuid.UUID
 	Payload        []byte
 	Status         string
+	Attempts       int32
 }
 
 func (q *Queries) ClaimMessageBatch(ctx context.Context, batchSize int32) ([]ClaimMessageBatchRow, error) {
@@ -50,6 +51,7 @@ func (q *Queries) ClaimMessageBatch(ctx context.Context, batchSize int32) ([]Cla
 			&i.EventTypeID,
 			&i.Payload,
 			&i.Status,
+			&i.Attempts,
 		); err != nil {
 			return nil, err
 		}

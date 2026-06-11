@@ -8,15 +8,16 @@ import (
 	"github.com/bcastillo-2022474/relay/internal/postgres/db"
 	"github.com/bcastillo-2022474/relay/internal/shared/types"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type MessageRepo struct {
 	q *db.Queries
 }
 
-func NewMessageRepo(pool *pgxpool.Pool) *MessageRepo {
-	return &MessageRepo{q: db.New(pool)}
+// NewMessageRepo accepts any DBTX (pool or transaction); the contract tests
+// run it inside a transaction that is rolled back.
+func NewMessageRepo(conn db.DBTX) *MessageRepo {
+	return &MessageRepo{q: db.New(conn)}
 }
 
 func (r *MessageRepo) Save(ctx context.Context, msg message.Message) error {
@@ -44,6 +45,7 @@ func (r *MessageRepo) ClaimBatch(ctx context.Context, limit int) ([]message.Mess
 			EventTypeID:    types.EventTypeID(row.EventTypeID),
 			Payload:        row.Payload,
 			Status:         message.Status(row.Status),
+			Attempts:       int(row.Attempts),
 		})
 	}
 	return msgs, nil

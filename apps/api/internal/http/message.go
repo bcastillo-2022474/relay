@@ -11,6 +11,23 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
+type messageHandlers struct {
+	publishMsg *msgcommand.PublishCommand
+}
+
+func RegisterMessageRoutes(api huma.API, publishMsg *msgcommand.PublishCommand) {
+	h := messageHandlers{publishMsg: publishMsg}
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "publish-message",
+		Method:        http.MethodPost,
+		Path:          "/v1/app/{appId}/msg",
+		Summary:       "Publish a message",
+		Tags:          []string{"Messages"},
+		DefaultStatus: http.StatusAccepted, // durable acceptance, not delivery
+	}, wrap(h.publish))
+}
+
 type publishMessageRequest struct {
 	AppID types.ApplicationID `path:"appId" doc:"Application ID"`
 	Body  struct {
@@ -35,25 +52,17 @@ func newMessageResponse(msg message.Message) *messageResponse {
 	}}
 }
 
-func RegisterMessageRoutes(api huma.API, publishMsg *msgcommand.PublishCommand) {
-	huma.Register(api, huma.Operation{
-		OperationID:   "publish-message",
-		Method:        http.MethodPost,
-		Path:          "/v1/app/{appId}/msg",
-		Summary:       "Publish a message",
-		Tags:          []string{"Messages"},
-		DefaultStatus: http.StatusAccepted, // durable acceptance, not delivery
-	}, wrap(func(ctx context.Context, req *publishMessageRequest) (*messageResponse, error) {
-		msg, err := publishMsg.Execute(ctx, msgcommand.PublishCommandInput{
-			Payload:        req.Body.Payload,
-			EventType:      req.Body.EventType,
-			ApplicationID:  req.AppID,
-			OrganizationID: OrgIDFromCtx(ctx),
-			Caller:         CallerFromCtx(ctx),
-		})
-		if err != nil {
-			return nil, err
-		}
-		return newMessageResponse(msg), nil
-	}))
+func (h messageHandlers) publish(ctx context.Context, req *publishMessageRequest) (*messageResponse, error) {
+	msg, err := h.publishMsg.Execute(ctx, msgcommand.PublishCommandInput{
+		Payload:        req.Body.Payload,
+		EventType:      req.Body.EventType,
+		ApplicationID:  req.AppID,
+		OrganizationID: OrgIDFromCtx(ctx),
+		Caller:         CallerFromCtx(ctx),
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return newMessageResponse(msg), nil
 }

@@ -12,7 +12,7 @@ WHERE id IN (
     LIMIT @batch_size
     FOR UPDATE SKIP LOCKED
 )
-RETURNING id, organization_id, application_id, event_type_id, payload, status;
+RETURNING id, organization_id, application_id, event_type_id, payload, status, attempts;
 
 -- name: MarkMessagePublished :exec
 UPDATE messages

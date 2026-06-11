@@ -11,6 +11,23 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
+type eventTypeHandlers struct {
+	createEventType *etcommand.CreateTypeCommand
+}
+
+func RegisterEventTypeRoutes(api huma.API, createEventType *etcommand.CreateTypeCommand) {
+	h := eventTypeHandlers{createEventType: createEventType}
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "create-event-type",
+		Method:        http.MethodPost,
+		Path:          "/v1/app/{appId}/event-type",
+		Summary:       "Create an event type",
+		Tags:          []string{"Event Types"},
+		DefaultStatus: http.StatusCreated,
+	}, wrap(h.create))
+}
+
 type createEventTypeRequest struct {
 	AppID types.ApplicationID `path:"appId" doc:"Application ID"`
 	Body  struct {
@@ -42,25 +59,17 @@ func newEventTypeResponse(et event_type.EventType) *eventTypeResponse {
 	return &eventTypeResponse{Body: body}
 }
 
-func RegisterEventTypeRoutes(api huma.API, createEventType *etcommand.CreateTypeCommand) {
-	huma.Register(api, huma.Operation{
-		OperationID:   "create-event-type",
-		Method:        http.MethodPost,
-		Path:          "/v1/app/{appId}/event-type",
-		Summary:       "Create an event type",
-		Tags:          []string{"Event Types"},
-		DefaultStatus: http.StatusCreated,
-	}, wrap(func(ctx context.Context, req *createEventTypeRequest) (*eventTypeResponse, error) {
-		et, err := createEventType.Execute(ctx, etcommand.CreateTypeInput{
-			Name:           req.Body.Name,
-			ApplicationID:  req.AppID,
-			OrganizationID: OrgIDFromCtx(ctx),
-			PayloadSchema:  req.Body.PayloadSchema,
-			Caller:         CallerFromCtx(ctx),
-		})
-		if err != nil {
-			return nil, err
-		}
-		return newEventTypeResponse(et), nil
-	}))
+func (h eventTypeHandlers) create(ctx context.Context, req *createEventTypeRequest) (*eventTypeResponse, error) {
+	et, err := h.createEventType.Execute(ctx, etcommand.CreateTypeInput{
+		Name:           req.Body.Name,
+		ApplicationID:  req.AppID,
+		OrganizationID: OrgIDFromCtx(ctx),
+		PayloadSchema:  req.Body.PayloadSchema,
+		Caller:         CallerFromCtx(ctx),
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return newEventTypeResponse(et), nil
 }

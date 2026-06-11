@@ -40,6 +40,10 @@ func (r *InMemoryMessageRepository) ClaimBatch(ctx context.Context, limit int) (
 			break
 		}
 		if row.msg.Status == message.StatusPending && !row.nextAttemptAt.After(now) {
+			// Mirror the real adapter: claiming increments attempts and
+			// returns the post-increment count. The contract suite enforces
+			// this parity.
+			row.msg.Attempts++
 			claimed = append(claimed, row.msg)
 		}
 	}

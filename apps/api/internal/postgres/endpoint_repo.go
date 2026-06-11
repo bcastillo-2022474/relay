@@ -9,15 +9,14 @@ import (
 	"github.com/bcastillo-2022474/relay/internal/shared/types"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type EndpointRepo struct {
 	q *db.Queries
 }
 
-func NewEndpointRepo(pool *pgxpool.Pool) *EndpointRepo {
-	return &EndpointRepo{q: db.New(pool)}
+func NewEndpointRepo(conn db.DBTX) *EndpointRepo {
+	return &EndpointRepo{q: db.New(conn)}
 }
 
 func (r *EndpointRepo) Save(ctx context.Context, ep endpoint.Endpoint) error {

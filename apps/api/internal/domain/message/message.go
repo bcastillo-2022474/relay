@@ -21,6 +21,7 @@ type Message struct {
 	EventTypeID    types.EventTypeID
 	Payload        json.RawMessage
 	Status         Status
+	Attempts       int
 }
 
 func New(
