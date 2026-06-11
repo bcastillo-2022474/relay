@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	appcommand "github.com/bcastillo-2022474/relay/internal/application/command"
 	endpointcommand "github.com/bcastillo-2022474/relay/internal/endpoint/command"
@@ -15,9 +17,11 @@ import (
 	msgcommand "github.com/bcastillo-2022474/relay/internal/message/command"
 	"github.com/bcastillo-2022474/relay/internal/middleware"
 	"github.com/bcastillo-2022474/relay/internal/shared/types"
+	charmlog "github.com/charmbracelet/log"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
 type ApplicationResponse struct {
@@ -55,7 +59,14 @@ type MessageResponse struct {
 }
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	charmLogger := charmlog.NewWithOptions(os.Stdout, charmlog.Options{
+		Level:           charmlog.DebugLevel,
+		ReportTimestamp: true,
+		TimeFormat:      time.TimeOnly,
+	})
+	appLog  := slog.New(charmLogger.WithPrefix("app"))
+	httpLog := slog.New(charmLogger.WithPrefix("http"))
+
 	authz := fakes.AllowAllAuthorization{}
 
 	// In-memory repositories until Postgres lands.
@@ -64,13 +75,17 @@ func main() {
 	endpointRepo := fakes.NewInMemoryEndpointRepo()
 	msgRepo := fakes.NewInMemoryMessageRepository()
 
-	createApp := appcommand.NewCreateCommand(appRepo, authz, log)
-	createEventType := etcommand.NewCreateTypeCommand(eventTypeRepo, appRepo, authz, log)
-	createEndpoint := endpointcommand.NewCreateCommand(endpointRepo, appRepo, authz, log)
-	publishMsg := msgcommand.NewPublishCommand(eventTypeRepo, appRepo, msgRepo, authz, log)
+	createApp := appcommand.NewCreateCommand(appRepo, authz, appLog)
+	createEventType := etcommand.NewCreateTypeCommand(eventTypeRepo, appRepo, authz, appLog)
+	createEndpoint := endpointcommand.NewCreateCommand(endpointRepo, appRepo, authz, appLog)
+	publishMsg := msgcommand.NewPublishCommand(eventTypeRepo, appRepo, msgRepo, authz, appLog)
 
 	router := chi.NewMux()
 	router.Use(middleware.Auth)
+	router.Use(chimiddleware.RequestLogger(&chimiddleware.DefaultLogFormatter{
+		Logger:  newChiLogger(httpLog),
+		NoColor: false,
+	}))
 
 	api := humachi.New(router, huma.DefaultConfig("Relay API", "0.1.0"))
 
@@ -188,7 +203,7 @@ func main() {
 		Path:          "/v1/app/{appId}/msg",
 		Summary:       "Publish a message",
 		Tags:          []string{"Messages"},
-		DefaultStatus: http.StatusAccepted, // ingest is async; this is an ack, not a result
+		DefaultStatus: http.StatusAccepted,
 	}, httpx.Wrap(func(ctx context.Context, input *struct {
 		AppID string `path:"appId"`
 		Body  struct {
@@ -196,27 +211,40 @@ func main() {
 			Payload   json.RawMessage `json:"payload"`
 		}
 	}) (*MessageResponse, error) {
-		message, err := publishMsg.Execute(msgcommand.PublishCommandInput{
+		msg, err := publishMsg.Execute(msgcommand.PublishCommandInput{
 			Payload:        input.Body.Payload,
 			EventType:      input.Body.EventType,
 			ApplicationID:  types.ApplicationID(input.AppID),
 			OrganizationID: middleware.OrgIDFromCtx(ctx),
 			Caller:         middleware.CallerFromCtx(ctx),
 		})
-
 		if err != nil {
 			return nil, err
 		}
 		resp := &MessageResponse{}
-		resp.Body.MessageID = string(message.ID)
-		resp.Body.Status = string(message.Status)
-
+		resp.Body.MessageID = string(msg.ID)
+		resp.Body.Status = string(msg.Status)
 		return resp, nil
 	}))
 
-	log.Info("api listening", "addr", ":8080")
+	httpLog.Info("api listening", "addr", ":8080")
 	if err := http.ListenAndServe(":8080", router); err != nil {
-		log.Error("server error", "err", err)
+		httpLog.Error("server error", "err", err)
 		os.Exit(1)
 	}
+}
+
+// newChiLogger bridges chi's request logger to our slog instance.
+func newChiLogger(log *slog.Logger) chimiddleware.LoggerInterface {
+	return &chiSlogLogger{log: log}
+}
+
+type chiSlogLogger struct{ log *slog.Logger }
+
+func (l *chiSlogLogger) Print(v ...any) {
+	l.log.Info(fmt.Sprint(v...))
+}
+
+func (l *chiSlogLogger) Printf(format string, v ...any) {
+	l.log.Info(fmt.Sprintf(format, v...))
 }
